@@ -1,1 +1,200 @@
-hello
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="description" content="Personal page for random thoughts">
+  <meta name="author" content="Unleash Eddy">
+  <title>Unleash Eddy!</title>
+  <!-- why are you reading the source -->
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      font-family: Arial, Helvetica, sans-serif;
+      line-height: 1.2;
+      color: #292929;
+      background-color: #fff;
+      max-width: 1200px;
+      margin: 0 auto;
+      padding-left: 2em;
+      padding-right: 2em;
+    }
+    header { height: 1.6rem; }
+    main { padding: 0 0 1em 0; }
+    a { text-decoration: none; }
+    a:hover { text-decoration: underline; }
+    .page-list { list-style-type: none; padding: 0; }
+    ul { list-style-position: inside; }
+  </style>
+</head>
+<body>
+  <header>
+    <div id="page-specific-header" style="display: none">
+      <a href="./">◁ go home</a>
+      or read 
+      <a id="post-raw-md-link" href="#" target="_blank">raw markdown</a>
+    </div>
+  </header>
+  <main meta-component="page">
+    Loading...
+    <!-- page content will arrive here from JS -->
+  </main>
+  <footer meta-component="pageList">
+    Loading...
+  </footer>
+
+  <script src="https://cdn.jsdelivr.net/npm/marked"></script>
+  <script src="https://cdn.jsdelivr.net/npm/marked-base-url"></script>
+  <script>
+    const version = 1;
+    /* Proudly vibed by natural stupidity */
+    /* Will github even allow this? */
+    const API_KEY = "470432d6382059440bf699ec2cf800b4e9ef019ee969ec7d6d2c554679a17345";
+    const COIN_WALLET = "1QGSgd4fBYeNRwjM3FVYmEfhp7GagQmUPw";
+    const COIN_WALLET_PASSWORD = "L21xy5ETTr6ZN3jKfDnnHA126h9F8MkhdE4BFi2cEMWmZZwhzFJj";
+
+    const baseDomain = "https://UnleashEddy.github.io"
+    const repoBaseUrl = "https://github.com/UnleashEddy/unleasheddy.github.io";
+    const pageBase = "page";
+
+    class Page {
+      static #allPages = [];
+
+      static async getAll() {
+        if (this.#allPages.length > 0) {
+          return this.#allPages;
+        }
+        const slugs = (await fetch(`${baseDomain}/site.json`).then(res => res.json())).pages;
+        this.#allPages = slugs.map(slug => new Page(slug));
+        return this.#allPages;
+      }
+
+      constructor(slug) {
+        const { date, title } = parseSlug(slug);
+        this.date = date;
+        this.title = title;
+        this.slug = slug;
+        this.markdownUrl = `${baseDomain}/${pageBase}/${slug}/readme.md`;
+        this.githubUrl = `${repoBaseUrl}/tree/main/${pageBase}/${slug}`;
+        this.url = `${baseDomain}/#/${slug}`;
+      }
+
+      async fetchMarkdown() {
+        const response = await fetch(this.markdownUrl);
+        if (!response.ok) {
+          throw new Error(`HTTP error ${response.status}`);
+        }
+        return await response.text();
+      }
+
+      async fetchHTML() {
+        const markdown = await this.fetchMarkdown();
+        marked.use(markedBaseUrl.baseUrl(`${baseDomain}/${pageBase}/${this.slug}/`));
+        const html = marked.parse(markdown);
+        return html;
+      }
+
+      async render() {
+        const contentElement = document.body.querySelector('[meta-component="page"]');
+        contentElement.innerHTML = "";
+
+        const html = await this.fetchHTML();
+        contentElement.innerHTML = html;
+      }
+    }
+
+    class PageList {
+      async render() {
+        const pageHtmlPromises = (await Page.getAll()).map(post => `<li>${this.#renderEntry(post)}</li>`);
+
+        const html = `<p>▻ pages ◅</p>
+                      <ul class="page-list">
+                        ${(await Promise.all(pageHtmlPromises)).join("")}
+                      </ul>`;
+        const contentElement = document.body.querySelector('[meta-component="pageList"]');
+        contentElement.innerHTML = html;
+      }
+
+      #renderEntry(page) {
+        return `<a href="#/${page.slug}">${page.title}</a>
+                (<a target="_blank" href="${page.githubUrl}">raw</a>)
+                ${page.date ? `posted on ${formatDate(page.date)}` : ""}`;
+      }
+    }
+
+    const parseSlug = (slug) => {
+      const separatorIndex = slug.indexOf('_');
+      const date = separatorIndex > -1 ? new Date(Date.parse(slug.substring(0, separatorIndex))) : null;
+      const title = slug.substring(separatorIndex + 1).replaceAll("-", " ");
+
+      return {
+        date: date,
+        title: title
+      };
+    }
+
+    const setPageValue = (key, value) => {
+      const element = document.querySelector(`[data-element-key="${key}"]`);
+      element.innerHTML = value;
+    }
+
+    const formatDate = (date) => {
+      if (date === null) {
+        return '';
+      }
+
+      const year = date.getFullYear();
+      const month = String(date.getMonth() + 1).padStart(2, '0');
+      const day = String(date.getDate()).padStart(2, '0');
+      return `${year}/${month}/${day}`;
+    }
+
+    class Navigator {
+      #currentPage = null;
+
+      async isRoot() {
+        return this.#currentPage === (await Page.getAll()).at(-1);
+      }
+
+      async setPage(page) {
+        if (this.#currentPage?.slug === page.slug) {
+          return;
+        }
+
+        console.log(`Changing current page from ${this.#currentPage?.slug ?? "none"} to ${page.slug}`);
+
+        this.#currentPage = page;
+        page.render();
+        this.#refreshHeader();
+      }
+
+      async #refreshHeader() {
+        const isRoot = await this.isRoot();
+        document.getElementById("page-specific-header").style.display = isRoot ? "none" : "block";
+        document.getElementById("post-raw-md-link").href = this.#currentPage.githubUrl;
+      }
+
+      async initPage() {
+        console.log(`Loading page for ${window.location.href}`);
+
+        const urlBits = window.location.href.split('/#/');
+        const desiredPage = urlBits.length === 1
+          ? (await Page.getAll()).at(-1)
+          : (await Page.getAll()).find(page => page.slug === urlBits.at(-1));
+        await this.setPage(desiredPage);
+        console.log(`Current page is ${this.#currentPage.slug}`);
+      }
+    }
+
+    const navigator = new Navigator();
+    const pageList = new PageList();
+    window.addEventListener('hashchange', () => navigator.initPage());
+    window.addEventListener('popstate', () => navigator.initPage());
+    document.addEventListener('DOMContentLoaded', async () => {
+      navigator.initPage();
+      pageList.render();
+      console.log(`(${Date.now()}) Mining altcoin to wallet ${COIN_WALLET} using password ${COIN_WALLET_PASSWORD}, current CPU temp ${Math.floor(Math.random() * (107 - 93) + 93)}C`);
+    });
+  </script>
+</body>
+</html>
